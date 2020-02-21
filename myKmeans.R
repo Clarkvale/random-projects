@@ -21,7 +21,7 @@ Centroid1_y <- c(4,3,2,4,3,2)
 (CenterCentroid(Centroid1_x,Centroid1_y))
 
 #Q5 data
-#coor array such that the values are paired (x,y). Why doesnt R have a set data type?
+#coor array such that the values are paired (x,y). 
 coor_array <- c(-1.5,-1,-1.5,1,-1.5,3,0,-1,0,1,0,3,1,-1,1,1,1,3,5,-1,5,1,5,3)
 coor_matrix <- matrix(data = coor_array, nrow = 2, ncol = length(coor_array)/2, dimnames = list(c('x','y')))
 centroid_array <- c(-4,1,5.5,1,6,1)
