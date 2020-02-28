@@ -1,4 +1,5 @@
-
+library(rpartitions)
+library(ggplot2)
 
 ########
 #average delegate scenario
@@ -6,75 +7,9 @@
 #random total number of members
 set.seed(69)
 
-#total_members <- floor(runif(1, min = 100, max = 500))
-total_members <- 100
-#number of county convention delegates
-ccd <- 10
-
-#number of democratic candidates
-ndc <- LETTERS[1:5]
-
-#2 delegate viability cutoff
-dvc <- ceiling(total_members * 0.15)
-
-#partition function, 1st round
-partition <- function(group_size, groups){
-  groupout <- c()
-  
-  shrinking_t <- group_size
-  
-  group_vector <- c()
-  r_group_order <- sample(groups, length(groups))
-  count <- 1
-  for(i in r_group_order){
-    if(count == 1){
-      out <- floor(rnorm(1,mean = 50))
-      shrinking_t <- (shrinking_t - out)
-    }
-    else{
-      out <- floor(runif(1, min = 0, max = shrinking_t))
-      shrinking_t <- (shrinking_t - out)
-    }
-    count <- count + 1
-    groupout[i] <- out
-    
-  
-  
-  }
-  if(sum(groupout) != group_size){
-    rand_candidate <- sample(groups, 1)
-    groupout[rand_candidate] <- groupout[rand_candidate] + (group_size - sum(groupout))
-  }
-  return(groupout)
-}
-
-#partition function,2nd round, EXPECTS DATA.FRAME
-partition2 <- function(mpars, cutoff){
-  mobile <- mpars[mpars$Votes < cutoff,2]
-  sum_mobile <- sum(mpars[mpars$Votes < cutoff,1])
-  
-  mpars[mpars$Votes < cutoff,1] <- 0 
-  shrinking_mp <- sum_mobile
-  viable <- mpars$Candidates[which(mpars$Votes != 0)]
-  t_rearrange <- 0
-  for(groups in sample(viable, length(viable))){
-    add <- floor(runif(1,min = 0, max = shrinking_mp))
-    shrinking_mp <- shrinking_mp - add
-    t_rearrange <- t_rearrange + add
-    mpars$Votes[which(mpars$Candidates == groups)] <- mpars$Votes[which(mpars$Candidates == groups)] + add
-    
-  }
-  
-  if(sum_mobile != t_rearrange){
-    rand_candidate <- which(mpars$Candidates == sample(viable, 1))
-    mpars$Votes[rand_candidate] <- mpars$Votes[rand_candidate] + (sum_mobile - t_rearrange)
-  }
-  return(mpars)  
-} 
-
 
 #award delegates
-award <- function(round2, ndelegates){#Fix tie breaks and too many delegates
+award <- function(round2, ndelegates){
   t_voters <- sum(round2$Votes)
   d_out <- c()
   awarded_d <- c()
@@ -86,24 +21,37 @@ award <- function(round2, ndelegates){#Fix tie breaks and too many delegates
   }
   
   round2["Unrounded_Delegates"] <- d_out
-  round2["Delegates"] <- round(d_out)
+  round2["Delegates"] <- floor(d_out + 0.5) #notice how i cant just use round(). I need R to do simple rounding, not to the nearest even number when at 0.5
   
   
   
   if(sum(round2$Delegates) > ndelegates){
     if(anyDuplicated(comparator(round2$Unrounded_Delegates)) != 0){
       comp_ar <- comparator(round2$Unrounded_Delegates)
-      coin_flip = floor(runif(1, min = 1, max = 2))
+      coin_flip = floor(runif(1, min = 1, max = 3))
       for(i in comp_ar){
         if(length(i) == 2) {
-          round2$Delegates[i[coin_flip]] - 1}
+          round2$Delegates[i[coin_flip]] <- round2$Delegates[i[coin_flip]] - 1
+          break}
       }
       
     }
-    round2 <- removeDelegate(round2)
+    else{
+    round2 <- removeDelegate(round2)}
   }
-  else if(sum(sapply(round2$Unrounded_Delegates, FUN = round)) < ndelegates){
-    round2 <- addDelegate(round2)
+  else if(sum(round2$Delegates) < ndelegates){
+    if(anyDuplicated(comparator(round2$Unrounded_Delegates)) != 0){
+      comp_ar <- comparator(round2$Unrounded_Delegates)
+      coin_flip = floor(runif(1, min = 1, max = 3))
+      for(i in comp_ar){
+        if(length(i) > 1) {
+          round2$Delegates[i[coin_flip]] <- round2$Delegates[i[coin_flip]] + 1
+          break}
+      }
+      
+    }
+    else{
+    round2 <- addDelegate(round2)}
   }
   
   return(round2)
@@ -114,21 +62,45 @@ award <- function(round2, ndelegates){#Fix tie breaks and too many delegates
 #these could probably be just one function
 #This function removes a delegate from the group who had to the most rounding 
 removeDelegate <- function(round2_df){
-  sigma_array <- sapply(round2_df$Unrounded_Delegates, lessThanOne)
-  sigma_array[which(sigma_array == 0)] <- NaN
-  min_sig_i <- which.min(sigma_array)
-  round2_df$Unrounded_Delegates[[min_sig_i]] <- round2_df$Unrounded_Delegates[[min_sig_i]] - 1
-  round2_df$Delegates <- round(round2_df$Unrounded_Delegates)
+  
+  sigma_array <- round_check(round2_df, addone = TRUE)
+  above0.5 <- which(sigma_array >= 0.5)
+  min_sig_i <- which.min(sigma_array[above0.5])
+  round2_df$Delegates[[min_sig_i]] <- round2_df$Delegates[[min_sig_i]] - 1
+  #round2_df$Delegates <- floor(round2_df$Unrounded_Delegates + 0.5)
   return(round2_df)
 }
 #this one does the opposite: adds a delegate to the group who did the least rounding 
 addDelegate <- function(round2_df){
-  sigma_array <- sapply(round2_df$Unrounded_Delegates, lessThanOne )
-  min_sig_i <- which(sigma_array == max(sigma_array))
-  round2_df$Unrounded_Delegates[[min_sig_i]] <- round2_df$Unrounded_Delegates[[min_sig_i]] - 1
+  
+  sigma_array <- round_check(round2_df, addone = TRUE)
+  
+  min_sig_i <- which.max(sigma_array)
+  round2_df$Delegates[[min_sig_i]] <- round2_df$Delegates[[min_sig_i]] + 1
+  #round2_df$Delegates <- floor(round2_df$Unrounded_Delegates + 0.5)
   return(round2_df)
 }
 
+round_check <- function(df, addone= FALSE){
+  sigma_array <- c()
+  for(i in 1:length(df$Unrounded_Delegates)){
+    if(df$Unrounded_Delegates[i] != 0 && trunc(df$Unrounded_Delegates[i]) == df$Unrounded_Delegates[i]){
+      if(addone){
+        sigma_array[i] <- 1
+      }
+      else{
+      sigma_array[i] <- 0
+      }
+    }
+    else if(df$Unrounded_Delegates[i] == 0){
+      sigma_array[i] <- NaN
+    }
+    else{
+      sigma_array[i] <- lessThanOne(df$Unrounded_Delegates[i])
+    }
+  }
+  return(sigma_array)
+}
 
 comparator <- function(ar){
   
@@ -150,24 +122,76 @@ lessThanOne <- function(num){
   return(num - as.integer(num))
 }
 
-
-
-
-
+assemble <- function(total_members = 100, candidates = LETTERS[1:5], ccd = 10){
+  dvc <- ceiling(total_members * 0.15)
+  #getting viable candidate list of votes
+  notfound <- TRUE
+  while(notfound){
+    p <- rand_partitions(total_members, length(candidates),1,zeros = TRUE)
+    c <- 0
+    for( i in p){
+      if(i < 15 && i > 0){
+        next()
+      }
+      c<- c +1
+    }
+    if(c == length(p)){
+      notfound <- FALSE
+    }
+  }
+  
+  caucus <- data.frame(p)
+  caucus[,2] <- candidates
+  colnames(caucus) <- c("Votes", "Candidates")
+  final_tally <- award(caucus, ccd)
+  final_tally["Vote_per_Delegate"] <- final_tally$Votes/final_tally$Delegates
+  return(final_tally)
+}
 #######
 #Running the functions
 
+iowa.sim <- list()
+for(i in 1:1000){
+  i_list <- list()
+  
+  total_members <- floor(runif(1, min = 90, max = 120))
+  #total_members <- 100
+  final_tally <- assemble(total_members = total_members, candidates = LETTERS[1:5])
+  
+  
+  i_list[["Final_Round_DF"]] <- final_tally
+  i_list[["VpD_Variance"]] <- var(final_tally$Vote_per_Delegate, na.rm = TRUE)
+  i_list[["Vote_Variance"]] <- var(final_tally$Votes[which(final_tally$Votes != 0)])
+  i_list[["Vote_SD"]] <- sd(final_tally$Votes)
+  i_list[["Delegate_Var"]] <- var(final_tally$Delegates[which(final_tally$Delegates != 0)])
+  i_list[["Unr_Delegate_Var"]] <- var(final_tally$Unrounded_Delegates[which(final_tally$Unrounded_Delegates != 0)])
+  iowa.sim[[i]] <- i_list
+  
+}
+
+Vote_var_ar <- c()
+Delegate_var <- c()
+U_Delegate_var <- c()
+Vote_sd_ar <- c()
+VpD_var_ar <- c()
+for(i in 1:length(iowa.sim)){
+  Vote_var_ar[i] <- iowa.sim[[i]]$Vote_Variance
+  Delegate_var[i] <- iowa.sim[[i]]$Delegate_Var
+  U_Delegate_var[i] <- iowa.sim[[i]]$Unr_Delegate_Var
+  Vote_sd_ar[i] <- iowa.sim[[i]]$Vote_SD
+  VpD_var_ar[i] <- iowa.sim[[i]]$VpD_Variance
+   
+}
+
+qplot(log10(Delegate_var))
+qplot(log10(U_Delegate_var))
+qplot(log10(VpD_var_ar))
+qplot(log10(Vote_var_ar))
 
 
-pars <- data.frame(matrix(partition(total_members, ndc)))
-pars["Candidates"] <- ndc
-colnames(pars) <- c("Votes", "Candidates")
+qplot(Delegate_var, U_Delegate_var)
+qplot(log10(VpD_var_ar), log10(Vote_var_ar))
+qplot(VpD_var_ar, Vote_var_ar)
 
-pars2 <- partition2(pars, dvc)
-final_tally <- award(pars2, ccd)
-final_tally["Vote_per_Delegate"] <- final_tally$Votes/final_tally$Delegates
-
-
-var(final_tally$Vote_per_Delegate, na.rm = TRUE)
-
+qplot(log10(Vote_var_ar), log10(Delegate_var))
 #
