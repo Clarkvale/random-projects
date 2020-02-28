@@ -1,5 +1,6 @@
 library(rpartitions)
 library(ggplot2)
+library(dunn.test)
 
 ########
 #average delegate scenario
@@ -124,10 +125,13 @@ lessThanOne <- function(num){
 
 assemble <- function(total_members = 100, candidates = LETTERS[1:5], ccd = 10){
   dvc <- ceiling(total_members * 0.15)
+  
+  algo_type <- floor(runif(1,1,3))
+  algos <- c("best", "top_down")
   #getting viable candidate list of votes
   notfound <- TRUE
   while(notfound){
-    p <- rand_partitions(total_members, length(candidates),1,zeros = TRUE)
+    p <- rand_partitions(total_members, length(candidates),1,zeros = TRUE, method = algos[algo_type])
     c <- 0
     for( i in p){
       if(i < 15 && i > 0){
@@ -156,7 +160,7 @@ for(i in 1:1000){
   
   total_members <- floor(runif(1, min = 90, max = 120))
   #total_members <- 100
-  final_tally <- assemble(total_members = total_members, candidates = LETTERS[1:5])
+  final_tally <- assemble(total_members = total_members, candidates = LETTERS[1:4])
   
   
   i_list[["Final_Round_DF"]] <- final_tally
@@ -174,24 +178,61 @@ Delegate_var <- c()
 U_Delegate_var <- c()
 Vote_sd_ar <- c()
 VpD_var_ar <- c()
+CA <- c()
+CD <- c()
+CB <- c()
+CC <- c()
+#CE <- c()
+
+Candidate_VpD <- matrix()
 for(i in 1:length(iowa.sim)){
   Vote_var_ar[i] <- iowa.sim[[i]]$Vote_Variance
   Delegate_var[i] <- iowa.sim[[i]]$Delegate_Var
   U_Delegate_var[i] <- iowa.sim[[i]]$Unr_Delegate_Var
   Vote_sd_ar[i] <- iowa.sim[[i]]$Vote_SD
   VpD_var_ar[i] <- iowa.sim[[i]]$VpD_Variance
-   
+  
+  
+  CA[i]<- iowa.sim[[i]]$Final_Round_DF$Vote_per_Delegate[1]
+  CD[i] <- iowa.sim[[i]]$Final_Round_DF$Vote_per_Delegate[4]
+  CB[i] <- iowa.sim[[i]]$Final_Round_DF$Vote_per_Delegate[2]
+  CC[i] <- iowa.sim[[i]]$Final_Round_DF$Vote_per_Delegate[3]
+  #CE[i] <- iowa.sim[[i]]$Final_Round_DF$Vote_per_Delegate[5]
+  
 }
+#colnames(Candidate_VpD) <- LETTERS[1:4]
+
+Candidate_VpD$A <- CA
+Candidate_VpD$B <- CB
+Candidate_VpD$C <- CC
+Candidate_VpD$D <- CD
+#Candidate_VpD$E <- CE
+
+attach(stack(Candidate_VpD))
+boxplot(values ~ ind, xlab = "Candidates", ylab = "Votes per Delegate Earned")
+aov <- (aov(values ~ ind))
+
+krusk <- kruskal.test(values ~ ind)
+krusk
+
+dunn.test(values, ind)
+
+
+plot(aov)
+
 
 qplot(log10(Delegate_var))
 qplot(log10(U_Delegate_var))
 qplot(log10(VpD_var_ar))
 qplot(log10(Vote_var_ar))
 
-
+plot(log10(Vote_var_ar), log10(U_Delegate_var) , xlab = "Log10 Transformed Vote Variance", ylab = "Log10 Transformed Raw Awarded Delegate Variance")
+plot(log10(Vote_var_ar), log10(Delegate_var), xlab = "Log10 Transformed Vote Variance", ylab = "Log10 Transformed Rounded Awarded Delegate Variance")
 qplot(Delegate_var, U_Delegate_var)
-qplot(log10(VpD_var_ar), log10(Vote_var_ar))
+qplot(log10(VpD_var_ar), log10(Vote_var_ar), xlab = "Vote per Delegate Variance (Log10)", ylab = "Vote Variance (Log10)")
 qplot(VpD_var_ar, Vote_var_ar)
 
 qplot(log10(Vote_var_ar), log10(Delegate_var))
-#
+
+par(mfrow = c(1,1))
+
